@@ -158,7 +158,7 @@ frame; `free_heap` shows a real, non-zero value (proves `free_heap_source` injec
 
 Programmatically confirmed on device `192.168.50.48:8080` (hand-rolled HTTP/SSE server,
 release build):
-- ✅ **Checkpoint 1** — boots, joins `linksys_SES_3218`, DHCP, prints `online at ...`
+- ✅ **Checkpoint 1** — boots, joins `<your-ssid>`, DHCP, prints `online at ...`
 - ✅ **Checkpoint 4** — REST 7/7 `200`, bytes match the C++ contract; `/espinfo` real
   (ESP32, 2 cores, rev 301, 240 MHz, real MAC); `/partition` real (nvs/otadata/app0)
 - ✅ **Checkpoint 5** — SSE baseline `gpio-state` (4 pins, correct `s/v/t`) + live
