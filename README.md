@@ -5,13 +5,17 @@ backend. The upstream C++ library serves an HTTP + Server-Sent-Events stream tha
 a remotely hosted Vue UI; because that UI is hosted remotely, the only surface this crate
 ports is the backend HTTP/SSE protocol.
 
+> **Using this in your own ESP32 project?** See **[docs/INTEGRATION.md](docs/INTEGRATION.md)** —
+> a step-by-step guide to add live GPIO/PWM/ADC monitoring to an existing esp-hal + embassy firmware.
+
 ## Layout
 
 - `src/protocol.rs` — byte-exact JSON / HTML / SSE serializers (pure, host-testable).
 - `src/value.rs` — `readGPIO` value/type mapping (pure, host-testable).
 - `src/lib.rs` — `GpioViewer` / `GpioViewerBuilder` / `PinMode` / `PinType`.
 - `src/sampler.rs` — the embassy sampler + broadcast channel (`server`).
-- `src/server.rs` — picoserve `Router`, `AppState`, and the REST/SSE handlers (`server`).
+- `src/server.rs` — hand-rolled async HTTP/1.1 + SSE server over embassy-net (`ServerState`, `accept_loop`) (`server`).
+- `src/http.rs` — pure HTTP request-line parse + response-header builder (host-testable) (`server`).
 - `src/hwinfo.rs` — real chip/flash/heap reads for `/espinfo` + the partition-table reader (`server`).
 - `examples/esp32.rs`, `examples/esp32s3.rs` — complete per-chip firmware (Wi-Fi STA + serve).
 
