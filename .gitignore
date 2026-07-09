@@ -1,5 +1,14 @@
 
+# Rust build artifacts
+/target
+
+# WiFi credentials for example firmware — never commit real secrets
+.env
+
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db
 .beads-credential-key
+
+# Editor/agent backup files
+*.bak

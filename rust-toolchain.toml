@@ -1,0 +1,9 @@
+# The Xtensa ESP32 / ESP32-S3 targets require Espressif's `esp` Rust fork (LLVM with Xtensa
+# support). Cross-compiling the library and the per-chip examples uses this toolchain:
+#   cargo build -Zbuild-std=core,alloc --target xtensa-esp32-none-elf --example esp32 --features esp32,server
+#
+# The `esp` toolchain also ships the host std (e.g. aarch64-apple-darwin), so plain
+# `cargo test` still builds and runs the host test suite on the host target — `.cargo/config.toml`
+# deliberately sets no default `[build] target`, so host tests are never cross-compiled.
+[toolchain]
+channel = "esp"

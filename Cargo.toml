@@ -1,0 +1,169 @@
+[package]
+name = "esp-gpio-viewer"
+version = "0.1.0"
+edition = "2021"
+description = "no_std ESP32 Rust port of the GPIOViewer backend HTTP/SSE protocol"
+license = "MIT"
+
+# `no_std` embedded library. Host builds/tests work because `src/lib.rs` uses
+# `#![cfg_attr(not(test), no_std)]` — the crate is `no_std` for normal (embedded)
+# builds and links `std` only under `cfg(test)`, so `cargo test` runs on the host.
+#
+# Build commands (see README.md for detail):
+#   Host tests (default stable toolchain, NO features — zero embedded deps compiled):
+#     cargo test
+#   Cross-compile the server for a chip (Xtensa, requires the `esp` toolchain):
+#     cargo +esp build --release -Zbuild-std=core,alloc --target xtensa-esp32-none-elf   --features esp32,server
+#     cargo +esp build --release -Zbuild-std=core,alloc --target xtensa-esp32s3-none-elf --features esp32s3,server
+#
+# The target/toolchain are passed explicitly on the command line (not pinned in
+# .cargo/config.toml or rust-toolchain.toml) so that plain `cargo test` keeps using the
+# host's default stable toolchain and host target.
+
+[dependencies]
+# heapless gives us fixed-capacity `String`/`Vec` so every serializer formats into
+# stack-inline buffers with no heap allocator (required on the embedded targets).
+heapless = "0.8"
+
+# --- Server stack ------------------------------------------------------------------
+# All of the following are OPTIONAL and compile ONLY under the `server` feature (and,
+# for esp-hal, the chip features). Host `cargo test` (no features) pulls none of them.
+
+# embassy-net / -time / -sync: the async network + timing + sync primitives the server
+# and (later) sampler run on. Versions pinned to match the sibling ESP32 Rust projects
+# so the dependency graph resolves identically across repos.
+embassy-net = { version = "0.9.1", default-features = false, optional = true, features = [
+  "dhcpv4",
+  "medium-ethernet",
+  "tcp",
+  "udp",
+] }
+embassy-time = { version = "0.5.0", optional = true }
+embassy-sync = { version = "0.8.0", optional = true }
+embedded-io-async = { version = "0.7.0", optional = true }
+
+# esp-hal: the chip HAL. Unused by the static router itself but wired here (behind the
+# chip features) as the foundation the later reader/sampler tasks read GPIO/ADC through.
+# A chip feature is mandatory for esp-hal to compile, so it is pulled only by esp32 /
+# esp32s3 — never by `server` alone.
+esp-hal = { version = "1.1.0", default-features = false, optional = true }
+
+# --- /partition support ------------------------------------------------------------
+# esp-bootloader-esp-idf parses the on-flash ESP-IDF partition table for `/partition`
+# (`hwinfo::read_partition_infos`) and provides `esp_app_desc!` for the examples. Chip-gated.
+# embedded-storage is the tiny trait crate the partition reader is generic over (no flash
+# driver hard-dependency); firmware supplies the concrete `Storage` (e.g. esp-storage).
+esp-bootloader-esp-idf = { version = "0.5.0", optional = true }
+embedded-storage = { version = "0.3.1", optional = true }
+
+# --- Example runtime (per-chip firmware in `examples/`) ----------------------------
+# All optional and pulled only by the chip + `server` features the examples require, so host
+# `cargo test` (no features) never sees them. esp-radio (Wi-Fi STA), esp-rtos (embassy
+# scheduler), esp-alloc (heap), esp-backtrace (panic handler), esp-println (logging),
+# embassy-executor (tasks), static_cell (`'static` allocation).
+esp-radio = { version = "0.18.0", default-features = false, optional = true }
+esp-rtos = { version = "0.3.0", default-features = false, optional = true }
+esp-alloc = { version = "0.10.0", optional = true }
+esp-backtrace = { version = "0.19.0", default-features = false, optional = true }
+esp-println = { version = "0.17.0", default-features = false, optional = true }
+embassy-executor = { version = "0.10.0", optional = true }
+static_cell = { version = "2.1.1", optional = true }
+
+[features]
+default = []
+
+# Enables the hand-rolled HTTP/SSE server (`src/server.rs`) and its async network stack. Chip is
+# selected separately via `esp32` / `esp32s3`.
+server = [
+  # Hand-rolled async HTTP/1.1 + SSE server over embassy-net (replaces picoserve): the TCP stack,
+  # timers (socket timeouts + sampler), broadcast channel, and the async write traits.
+  "dep:embassy-net",
+  "dep:embassy-time",
+  "dep:embassy-sync",
+  "dep:embedded-io-async",
+  # Chip-agnostic runtime bits the per-chip examples need (task macros + `'static` alloc).
+  "dep:embassy-executor",
+  "dep:static_cell",
+]
+
+# Chip-target selectors. Each turns on esp-hal (+ `unstable`) for that chip and pulls the
+# chip-specific example-runtime crates (Wi-Fi/RTOS/alloc/backtrace/println) plus the partition
+# reader. Pair with `server`, e.g. `--features esp32,server`.
+esp32 = [
+  "dep:esp-hal",
+  "esp-hal/esp32",
+  "esp-hal/unstable",
+  "dep:esp-bootloader-esp-idf",
+  "esp-bootloader-esp-idf/esp32",
+  "dep:embedded-storage",
+  "dep:esp-radio",
+  "esp-radio/esp32",
+  "esp-radio/wifi",
+  "esp-radio/unstable",
+  "esp-radio/esp-alloc",
+  "dep:esp-rtos",
+  "esp-rtos/esp32",
+  "esp-rtos/embassy",
+  "esp-rtos/esp-alloc",
+  "esp-rtos/esp-radio",
+  "dep:esp-alloc",
+  "dep:esp-backtrace",
+  "esp-backtrace/esp32",
+  "esp-backtrace/panic-handler",
+  "esp-backtrace/println",
+  "dep:esp-println",
+  "esp-println/esp32",
+  "esp-println/uart",
+]
+esp32s3 = [
+  "dep:esp-hal",
+  "esp-hal/esp32s3",
+  "esp-hal/unstable",
+  "dep:esp-bootloader-esp-idf",
+  "esp-bootloader-esp-idf/esp32s3",
+  "dep:embedded-storage",
+  "dep:esp-radio",
+  "esp-radio/esp32s3",
+  "esp-radio/wifi",
+  "esp-radio/unstable",
+  "esp-radio/esp-alloc",
+  "dep:esp-rtos",
+  "esp-rtos/esp32s3",
+  "esp-rtos/embassy",
+  "esp-rtos/esp-alloc",
+  "esp-rtos/esp-radio",
+  "dep:esp-alloc",
+  "dep:esp-backtrace",
+  "esp-backtrace/esp32s3",
+  "esp-backtrace/panic-handler",
+  "esp-backtrace/println",
+  "dep:esp-println",
+  "esp-println/esp32s3",
+  "esp-println/uart",
+]
+
+# --- Per-chip runnable example firmware --------------------------------------------
+# Built with an explicit `--target` + `--example`, e.g.:
+#   cargo +esp build --release -Zbuild-std=core,alloc --target xtensa-esp32-none-elf   --example esp32   --features esp32,server
+#   cargo +esp build --release -Zbuild-std=core,alloc --target xtensa-esp32s3-none-elf --example esp32s3 --features esp32s3,server
+# `required-features` keeps them out of host `cargo test` (which sets no features).
+[[example]]
+name = "esp32"
+required-features = ["esp32", "server"]
+
+[[example]]
+name = "esp32s3"
+required-features = ["esp32s3", "server"]
+
+# --- Build profiles ----------------------------------------------------------------
+# The Xtensa examples must be built with optimizations even in dev: `opt-level = 0` inflates
+# `.text` so far that the linker's windowed longcalls overflow the 1 GB relocation window
+# (the esp-radio blobs then fail to link). `opt-level = "s"` keeps the image linkable and
+# small enough for the device. Host `cargo test` is unaffected by size, so these are safe.
+[profile.dev]
+opt-level = "s"
+
+[profile.release]
+codegen-units = 1
+lto          = "fat"
+opt-level    = "s"

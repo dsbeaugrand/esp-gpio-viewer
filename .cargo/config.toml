@@ -1,0 +1,19 @@
+# Cargo configuration for esp-gpio-viewer.
+#
+# IMPORTANT — host `cargo test` must keep using the default stable toolchain and host
+# target. Therefore this file deliberately does NOT set a `[build] target = ...` and does
+# NOT set `[unstable] build-std`, either of which would force EVERY cargo invocation
+# (including `cargo test`) to cross-compile and break the host test suite.
+#
+# Only per-target rustflags live here — they apply solely when you pass
+# `--target xtensa-esp32*-none-elf`, so host builds are untouched. The Xtensa target,
+# the `esp` toolchain, and `-Zbuild-std` are supplied explicitly on the command line:
+#
+#   cargo +esp build --release -Zbuild-std=core,alloc --target xtensa-esp32-none-elf   --features esp32,server
+#   cargo +esp build --release -Zbuild-std=core,alloc --target xtensa-esp32s3-none-elf --features esp32s3,server
+
+[target.xtensa-esp32-none-elf]
+rustflags = ["-C", "link-arg=-nostartfiles"]
+
+[target.xtensa-esp32s3-none-elf]
+rustflags = ["-C", "link-arg=-nostartfiles"]
