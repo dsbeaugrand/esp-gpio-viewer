@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "esp_gpio_viewer",
+  "project_id": "e9e4217b-1a48-400e-ac2e-2de226831452"
+}
