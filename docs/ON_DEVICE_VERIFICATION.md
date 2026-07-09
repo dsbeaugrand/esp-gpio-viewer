@@ -145,12 +145,11 @@ Toggle GPIO0 while `curl -N` runs → a new `gpio-state` frame appears. Ctrl-C t
 ✅ **Checkpoint 5 — SSE:** baseline arrives on connect; a pin change emits a `gpio-state`
 frame; `free_heap` shows a real, non-zero value (proves `free_heap_source` injection works).
 
-> **ESP32 single-worker caveat (by design):** the ESP32 example runs `WEB_TASK_POOL_SIZE=1`
-> (DRAM-bound — pool=2 won't link). With `KeepAlive::Close`, REST calls close promptly so the
-> lone worker cycles between REST and SSE. If you hold `curl -N /events` open **and** the
-> browser UI is also connected, one of them may wait — that's the known DRAM tradeoff. The
-> **ESP32-S3** example uses pool=2 and has no such limit. Test SSE and browser separately on
-> plain ESP32.
+> **Concurrency:** the example runs **3 concurrent accept-loop tasks** (independent TCP
+> sockets on port 8080), so the long-lived `/events` SSE stream and the browser's REST
+> polling are served simultaneously — verified on hardware (5/5 REST calls succeeded while
+> an SSE stream was held open). REST responses use `Connection: close` and close promptly;
+> a dead client is reclaimed within ~1 s via the sampler heartbeat, freeing its socket.
 
 ---
 
