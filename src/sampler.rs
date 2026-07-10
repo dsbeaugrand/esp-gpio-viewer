@@ -150,7 +150,12 @@ mod runtime {
     /// Number of queued frames the broadcast channel buffers before evicting the oldest.
     /// Small: the sampler publishes at most a few frames per interval and SSE clients drain
     /// promptly; a slow client coalesces via `Lagged` rather than stalling the sampler.
-    pub const FRAME_QUEUE_DEPTH: usize = 8;
+    ///
+    /// Kept low (2) on this `esp-hal-1.0` branch: each queued frame is a `String<2048>`, so the
+    /// channel storage is `FRAME_QUEUE_DEPTH * ~2 KiB`. On a device whose internal RAM is
+    /// already nearly full (LVGL pool + Wi-Fi driver heap), a depth of 8 (~16 KiB) does not fit;
+    /// depth 2 (~4 KiB) leaves headroom while still coalescing bursts. (`master` keeps 8.)
+    pub const FRAME_QUEUE_DEPTH: usize = 2;
 
     /// Maximum simultaneous SSE subscribers (each `/events` connection takes one slot).
     pub const MAX_SSE_CLIENTS: usize = 4;
