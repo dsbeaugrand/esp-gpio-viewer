@@ -1,6 +1,6 @@
 //! Runnable **ESP32-S3** firmware for `esp-gpio-viewer`.
 //!
-//! Mirrors `examples/esp32.rs` for the S3: Wi-Fi **STA** + DHCPv4 (esp-radio 0.18 +
+//! Mirrors `examples/esp32.rs` for the S3: Wi-Fi **STA** + DHCPv4 (esp-radio 0.17 +
 //! embassy-net), the GPIOViewer HTTP/SSE API served by the crate's hand-rolled server, and the
 //! sampler broadcasting live pin state. Point the hosted GPIOViewer UI (or a browser) at
 //! `http://<ip>:8080/`.
@@ -23,15 +23,20 @@
 
 use core::fmt::Write as _;
 
+use alloc::string::String;
 use embassy_executor::Spawner;
 use embassy_net::{Runner, Stack, StackResources};
 use embassy_time::{Duration, Timer};
 use esp_backtrace as _;
 use esp_hal::clock::CpuClock;
-use esp_hal::interrupt::software::SoftwareInterruptControl;
 use esp_hal::timer::timg::TimerGroup;
 use esp_println::println;
-use esp_radio::wifi::{sta::StationConfig, Config as WifiMode, Interface, WifiController};
+// esp-radio 0.17 STA shape: `wifi::new` yields a `WifiController` + `Interfaces`; the STA netif is
+// a `WifiDevice`. Credentials go through `ModeConfig::Client(ClientConfig)`, and a dropped link is
+// observed via `wait_for_event(WifiEvent::StaDisconnected)`.
+use esp_radio::wifi::{
+    ClientConfig, Config as WifiConfig, ModeConfig, WifiController, WifiDevice, WifiEvent,
+};
 use static_cell::StaticCell;
 
 use esp_gpio_viewer::sampler::{run_sampler, FrameChannel};
@@ -64,32 +69,46 @@ fn read_adc(_gpio: u8) -> u16 {
     0
 }
 
-/// Runs the embassy-net stack (RX/TX + DHCP). Never returns.
+/// Runs the embassy-net stack (RX/TX + DHCP). Never returns. In esp-radio 0.17 the STA netif is a
+/// `WifiDevice`, so the embassy-net `Runner` is generic over that (the 0.18 `Interface` alias is gone).
 #[embassy_executor::task]
-async fn net_task(mut runner: Runner<'static, Interface<'static>>) -> ! {
+async fn net_task(mut runner: Runner<'static, WifiDevice<'static>>) -> ! {
     runner.run().await
 }
 
-/// Manages the Wi-Fi station: (re)configures, connects, reconnects on drop. Never returns.
+/// Manages the Wi-Fi station: (re)configures, starts the radio, connects, reconnects on drop.
+/// Never returns.
 #[embassy_executor::task]
 async fn wifi_connection_task(mut controller: WifiController<'static>) -> ! {
-    // `with_password` takes an owned `String` (alloc); the SSID setter takes `impl Into<Ssid>`.
-    let station_config = StationConfig::default()
-        .with_ssid(WIFI_SSID)
-        .with_password(WIFI_PASSWORD.into());
-    let config = WifiMode::Station(station_config);
+    // esp-radio 0.17 client config: SSID/password are owned `String`s (alloc), wrapped in
+    // `ModeConfig::Client`. `set_config` only stores the config; `start_async` brings the radio up.
+    let client_config = ClientConfig::default()
+        .with_ssid(String::from(WIFI_SSID))
+        .with_password(String::from(WIFI_PASSWORD));
+    let config = ModeConfig::Client(client_config);
 
+    // Configure + start the radio once. If either fails, retry the whole bring-up after a pause.
     loop {
         if let Err(error) = controller.set_config(&config) {
             println!("wifi: set_config failed: {error:?}; retrying in 5s");
             Timer::after(Duration::from_secs(5)).await;
             continue;
         }
+        if let Err(error) = controller.start_async().await {
+            println!("wifi: start failed: {error:?}; retrying in 5s");
+            Timer::after(Duration::from_secs(5)).await;
+            continue;
+        }
+        break;
+    }
 
+    // Connect / reconnect loop: on a successful connect, block until the link drops
+    // (`WifiEvent::StaDisconnected`), then loop to reconnect.
+    loop {
         match controller.connect_async().await {
             Ok(_) => {
                 println!("wifi: connected to {WIFI_SSID}");
-                let _ = controller.wait_for_disconnect_async().await;
+                controller.wait_for_event(WifiEvent::StaDisconnected).await;
                 println!("wifi: disconnected; reconnecting");
             }
             Err(error) => {
@@ -131,21 +150,29 @@ async fn main(spawner: Spawner) -> ! {
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 64 * 1024);
     esp_alloc::heap_allocator!(size: 32 * 1024);
 
+    // esp-rtos 0.2 `start` takes a single timer on Xtensa (the RISC-V-only software-interrupt arg
+    // is `#[cfg(riscv)]`), so no `SoftwareInterruptControl` is needed here.
     let timg0 = TimerGroup::new(peripherals.TIMG0);
-    let sw_interrupt = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
-    esp_rtos::start(timg0.timer0, sw_interrupt.software_interrupt0);
+    esp_rtos::start(timg0.timer0);
     println!("esp32s3: embassy + esp-rtos started");
 
     // --- Wi-Fi controller + station interface -------------------------------------------
-    let (controller, interfaces) = esp_radio::wifi::new(peripherals.WIFI, Default::default())
-        .expect("failed to initialize Wi-Fi controller");
-    let station_device = interfaces.station;
+    // esp-radio 0.17: `init()` (argless) returns a `Controller` that the Wi-Fi driver borrows for
+    // its whole life, so it is parked in a `StaticCell` to give it a `'static` home. It requires the
+    // esp-rtos scheduler to be running (started just above).
+    static RADIO: StaticCell<esp_radio::Controller<'static>> = StaticCell::new();
+    let radio = RADIO.init(esp_radio::init().expect("failed to initialize esp-radio"));
+    let (controller, interfaces) =
+        esp_radio::wifi::new(radio, peripherals.WIFI, WifiConfig::default())
+            .expect("failed to initialize Wi-Fi controller");
+    let station_device = interfaces.sta;
 
     // --- embassy-net stack with DHCPv4 --------------------------------------------------
     let net_config = embassy_net::Config::dhcpv4(Default::default());
-    let mac_bytes = esp_hal::efuse::base_mac_address();
+    // Seed smoltcp's randomization from the factory MAC. esp-hal 1.0 returns a plain `[u8; 6]`.
+    let mac_bytes = esp_hal::efuse::Efuse::read_base_mac_address();
     let mut seed: u64 = 0;
-    for &byte in mac_bytes.as_bytes() {
+    for &byte in mac_bytes.iter() {
         seed = (seed << 8) | byte as u64;
     }
 
@@ -153,8 +180,9 @@ async fn main(spawner: Spawner) -> ! {
     let resources = RESOURCES.init(StackResources::new());
     let (stack, runner) = embassy_net::new(station_device, net_config, resources, seed);
 
-    spawner.spawn(net_task(runner).expect("spawn net_task"));
-    spawner.spawn(wifi_connection_task(controller).expect("spawn wifi_connection_task"));
+    // embassy-executor 0.9 `spawn` returns `Result`; `must_spawn` panics on a full pool.
+    spawner.must_spawn(net_task(runner));
+    spawner.must_spawn(wifi_connection_task(controller));
 
     println!("esp32s3: waiting for Wi-Fi + DHCP...");
     stack.wait_config_up().await;
@@ -183,7 +211,7 @@ async fn main(spawner: Spawner) -> ! {
     static VIEWER: StaticCell<GpioViewer> = StaticCell::new();
     let viewer_ref: &'static GpioViewer = VIEWER.init(viewer);
 
-    spawner.spawn(sampler_task(viewer_ref).expect("spawn sampler_task"));
+    spawner.must_spawn(sampler_task(viewer_ref));
 
     // --- Partition table for `/partition` -----------------------------------------------
     // Serves the representative `DEFAULT_PARTITIONS`. To serve the board's REAL table, read it
@@ -205,7 +233,7 @@ async fn main(spawner: Spawner) -> ! {
     ));
 
     for _ in 0..WEB_POOL_SIZE {
-        spawner.spawn(web_task(stack, state).expect("spawn web_task (pool full)"));
+        spawner.must_spawn(web_task(stack, state));
     }
 
     loop {

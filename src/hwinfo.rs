@@ -1,6 +1,6 @@
 //! Chip / flash / heap information for `GET /espinfo` (feature `server`).
 //!
-//! Builds a [`crate::protocol::EspInfo`] from **real esp-hal 1.1 reads** where a clean
+//! Builds a [`crate::protocol::EspInfo`] from **real esp-hal 1.0 reads** where a clean
 //! `no_std` API exists, and **honest fallbacks** (`"n/a"` / `0` / `None`) where no such API
 //! exists. This mirrors the C++ `sendESPInfo` (`gpio_viewer.h:353-495`), which leans on
 //! Arduino-core/ESP-IDF helpers that have no direct Rust analogue.
@@ -10,9 +10,9 @@
 //! |-------------------------------|---------------------------------------------------------------------|
 //! | `chip_model`, `cores_count`   | Compile-time constant selected by the active chip feature           |
 //! | `chip_features`               | Compile-time constant per chip                                      |
-//! | `cpu_frequency`               | `esp_hal::clock::cpu_clock()` (`gpio_viewer.h:355`)                  |
-//! | `chip_revision`               | `esp_hal::efuse::chip_revision()` (`major*100 + minor`)             |
-//! | `mac`                         | `esp_hal::efuse::base_mac_address()` packed big-endian into a `u64`  |
+//! | `cpu_frequency`               | `esp_hal::clock::Clocks::get().cpu_clock` (`gpio_viewer.h:355`)      |
+//! | `chip_revision`               | `esp_hal::efuse::Efuse::chip_revision()` (`major*100 + minor`)       |
+//! | `mac`                         | `esp_hal::efuse::Efuse::read_base_mac_address()` packed into a `u64` |
 //! | `reset_reason(_code)`         | `esp_hal::rtc_cntl::reset_reason(Cpu::current())`                    |
 //! | `up_time`, `uptime_us`        | `esp_hal::time::Instant::now().duration_since_epoch()`              |
 //! | `free_heap`                   | Firmware-injected `free_heap_source` (allocator-agnostic)           |
@@ -22,7 +22,7 @@
 //! | `cycle_count`                 | Honest `0` — no allocator-agnostic CCOUNT wrapper wired              |
 //! | `sketch_size`, `free_sketch`  | Honest `0` — Arduino-IDE concepts with no esp-hal analogue           |
 //! | `arduino_core_version`        | Honest `"n/a"` — not an Arduino build                               |
-//! | `sdk_version`                 | `"esp-hal 1.1"` (the actual SDK backing this firmware)              |
+//! | `sdk_version`                 | `"esp-hal 1.0"` (the actual SDK backing this firmware)              |
 //! | `idf_version`, `sketch_md5`   | Honest `None` — omitted (matches the C++ `#if`/length guards)        |
 //! | `temperature_c`               | Honest `None` — the temperature sensor needs peripheral ownership    |
 //!
@@ -33,7 +33,7 @@ use crate::protocol;
 
 /// The SDK backing this firmware. Reported verbatim as `sdk_version`; unlike the C++
 /// `ESP.getSdkVersion()` (which returns an ESP-IDF string) this port is built on esp-hal.
-const SDK_VERSION: &str = "esp-hal 1.1";
+const SDK_VERSION: &str = "esp-hal 1.0";
 
 // --- Per-chip compile-time constants -----------------------------------------------------
 // Exactly one chip module is active; the chip features are mutually exclusive at build time.
@@ -87,10 +87,14 @@ fn pack_mac(bytes: &[u8]) -> u64 {
 /// Collect the live hardware readings (chip path).
 #[cfg(any(feature = "esp32", feature = "esp32s3"))]
 fn hardware() -> Hardware {
-    // Chip revision as the ESP-IDF-style combined value `major*100 + minor`.
-    let revision = esp_hal::efuse::chip_revision();
-    // Base MAC programmed at manufacture (unstable esp-hal API, enabled by `unstable`).
-    let mac = pack_mac(esp_hal::efuse::base_mac_address().as_bytes());
+    // Chip revision as the ESP-IDF-style combined value `major*100 + minor`. In esp-hal 1.0
+    // `Efuse::chip_revision()` returns that combined `u16` directly (in 1.1 it was a struct with
+    // `.major`/`.minor`), so it is used as-is rather than recomputed.
+    let revision = esp_hal::efuse::Efuse::chip_revision();
+    // Base MAC programmed at manufacture (unstable esp-hal API, enabled by `unstable`). In 1.0
+    // `Efuse::read_base_mac_address()` returns a plain `[u8; 6]` (no wrapper / `.as_bytes()`).
+    let mac_bytes = esp_hal::efuse::Efuse::read_base_mac_address();
+    let mac = pack_mac(&mac_bytes);
     // Reset reason for the current core; `None` maps to code 0 ("UNKNOWN").
     let reset_code = esp_hal::rtc_cntl::reset_reason(esp_hal::system::Cpu::current())
         .map(|reason| reason as i32)
@@ -99,8 +103,9 @@ fn hardware() -> Hardware {
     let elapsed = esp_hal::time::Instant::now().duration_since_epoch();
 
     Hardware {
-        cpu_frequency: esp_hal::clock::cpu_clock().as_mhz(),
-        chip_revision: revision.major as u32 * 100 + revision.minor as u32,
+        // esp-hal 1.0 exposes the configured CPU rate via `Clocks::get()` (no free `cpu_clock()`).
+        cpu_frequency: esp_hal::clock::Clocks::get().cpu_clock.as_mhz(),
+        chip_revision: revision as u32,
         mac,
         reset_code,
         up_time: elapsed.as_secs() as u32,
@@ -127,7 +132,7 @@ fn hardware() -> Hardware {
 /// single table serves every Xtensa chip. This is sound because `esp_hal::rtc_cntl::reset_reason`
 /// builds the enum via `SocResetReason::from_repr(rtc_get_reset_reason(cpu))` — i.e. each
 /// variant's discriminant **is** the raw RTC hardware reset code, so `reason as i32` yields that
-/// raw code. Verified against `esp-hal` 1.1.1 `rtc_cntl/rtc/esp32.rs` / `esp32s3.rs`
+/// raw code. Verified against `esp-hal` 1.0.0 `rtc_cntl/rtc/esp32.rs` / `esp32s3.rs`
 /// (`ChipPowerOn = 0x01`, `CoreSw = 0x03`, `SysBrownOut = 0x0F`, …). Codes follow
 /// `esp_reset_reason_t` (`gpio_viewer.h` prints `ESP.getResetReason()` at `:474`).
 fn reset_reason_name(code: i32) -> &'static str {

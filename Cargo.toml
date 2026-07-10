@@ -32,28 +32,28 @@ heapless = "0.8"
 # embassy-net / -time / -sync: the async network + timing + sync primitives the server
 # and (later) sampler run on. Versions pinned to match the sibling ESP32 Rust projects
 # so the dependency graph resolves identically across repos.
-embassy-net = { version = "0.9.1", default-features = false, optional = true, features = [
+embassy-net = { version = "0.8.0", default-features = false, optional = true, features = [
   "dhcpv4",
   "medium-ethernet",
   "tcp",
   "udp",
 ] }
 embassy-time = { version = "0.5.0", optional = true }
-embassy-sync = { version = "0.8.0", optional = true }
+embassy-sync = { version = "0.7.2", optional = true }
 embedded-io-async = { version = "0.7.0", optional = true }
 
 # esp-hal: the chip HAL. Unused by the static router itself but wired here (behind the
 # chip features) as the foundation the later reader/sampler tasks read GPIO/ADC through.
 # A chip feature is mandatory for esp-hal to compile, so it is pulled only by esp32 /
 # esp32s3 — never by `server` alone.
-esp-hal = { version = "1.1.0", default-features = false, optional = true }
+esp-hal = { version = "1.0.0", default-features = false, optional = true }
 
 # --- /partition support ------------------------------------------------------------
 # esp-bootloader-esp-idf parses the on-flash ESP-IDF partition table for `/partition`
 # (`hwinfo::read_partition_infos`) and provides `esp_app_desc!` for the examples. Chip-gated.
 # embedded-storage is the tiny trait crate the partition reader is generic over (no flash
 # driver hard-dependency); firmware supplies the concrete `Storage` (e.g. esp-storage).
-esp-bootloader-esp-idf = { version = "0.5.0", optional = true }
+esp-bootloader-esp-idf = { version = "0.4.0", optional = true }
 embedded-storage = { version = "0.3.1", optional = true }
 
 # --- Example runtime (per-chip firmware in `examples/`) ----------------------------
@@ -61,12 +61,12 @@ embedded-storage = { version = "0.3.1", optional = true }
 # `cargo test` (no features) never sees them. esp-radio (Wi-Fi STA), esp-rtos (embassy
 # scheduler), esp-alloc (heap), esp-backtrace (panic handler), esp-println (logging),
 # embassy-executor (tasks), static_cell (`'static` allocation).
-esp-radio = { version = "0.18.0", default-features = false, optional = true }
-esp-rtos = { version = "0.3.0", default-features = false, optional = true }
-esp-alloc = { version = "0.10.0", optional = true }
-esp-backtrace = { version = "0.19.0", default-features = false, optional = true }
-esp-println = { version = "0.17.0", default-features = false, optional = true }
-embassy-executor = { version = "0.10.0", optional = true }
+esp-radio = { version = "0.17.0", default-features = false, optional = true }
+esp-rtos = { version = "0.2.0", default-features = false, optional = true }
+esp-alloc = { version = "0.9.0", optional = true }
+esp-backtrace = { version = "0.18.0", default-features = false, optional = true }
+esp-println = { version = "0.16.0", default-features = false, optional = true }
+embassy-executor = { version = "0.9.1", optional = true }
 static_cell = { version = "2.1.1", optional = true }
 
 [features]
