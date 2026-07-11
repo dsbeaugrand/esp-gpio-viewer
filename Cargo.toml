@@ -152,7 +152,9 @@ example-esp32s3 = [
   "esp-backtrace/println",
   "dep:esp-println",
   "esp-println/esp32s3",
-  "esp-println/uart",
+  # `auto` picks the best console for the board: USB-Serial-JTAG on native-USB S3 dev boards
+  # (so println shows over the USB-C port), or UART on boards with a separate serial bridge.
+  "esp-println/auto",
 ]
 
 # --- Per-chip runnable example firmware --------------------------------------------
