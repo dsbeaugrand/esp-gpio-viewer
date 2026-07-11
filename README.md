@@ -68,18 +68,18 @@ export WIFI_PASSWORD="your-password"
 ```bash
 # ESP32
 cargo +esp build --release -Zbuild-std=core,alloc --target xtensa-esp32-none-elf \
-    --example esp32 --features esp32,server
+    --example esp32 --features esp32,server,example-esp32
 
 # ESP32-S3
 cargo +esp build --release -Zbuild-std=core,alloc --target xtensa-esp32s3-none-elf \
-    --example esp32s3 --features esp32s3,server
+    --example esp32s3 --features esp32s3,server,example-esp32s3
 ```
 
 ### 3. Flash + monitor (espflash)
 
 ```bash
 cargo +esp run --release -Zbuild-std=core,alloc --target xtensa-esp32-none-elf \
-    --example esp32 --features esp32,server
+    --example esp32 --features esp32,server,example-esp32
 ```
 
 > Linking requires the Xtensa GCC toolchain on `PATH` (installed by `espup`); `source

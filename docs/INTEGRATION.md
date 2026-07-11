@@ -34,11 +34,12 @@ Your firmware must already: init `esp-hal`, set up `esp-rtos` + an embassy execu
 a global allocator (`esp-alloc`). If you don't have Wi-Fi/embassy-net yet, copy the bootstrap
 verbatim from [`examples/esp32.rs`](../examples/esp32.rs).
 
-> **Heads-up on features:** the `esp32` / `esp32s3` feature currently also pulls the
-> example-runtime crates (`esp-radio`, `esp-rtos`, `esp-alloc`, `esp-backtrace`, `esp-println`).
-> If your project already depends on those, keep the versions in the table above aligned to
-> avoid a duplicate/incompatible-version build error. (A leaner `examples`-only feature split is
-> a planned improvement.)
+> **Clean feature split:** the `esp32` / `esp32s3` features pull **only the library's own chip
+> deps** (`esp-hal` + the partition reader) — they do **not** drag in `esp-radio` / `esp-rtos` /
+> `esp-alloc` / `esp-backtrace` / `esp-println`. Those example-runtime crates live behind
+> separate `example-esp32` / `example-esp32s3` features used only by the bundled examples. So a
+> consuming firmware enables just `["esp32", "server"]` and supplies its own Wi-Fi/RTOS/alloc/
+> logging runtime — no duplicate-crate or console-mode collisions.
 
 ---
 

@@ -81,14 +81,14 @@ server = [
   "dep:embassy-time",
   "dep:embassy-sync",
   "dep:embedded-io-async",
-  # Chip-agnostic runtime bits the per-chip examples need (task macros + `'static` alloc).
-  "dep:embassy-executor",
-  "dep:static_cell",
 ]
 
-# Chip-target selectors. Each turns on esp-hal (+ `unstable`) for that chip and pulls the
-# chip-specific example-runtime crates (Wi-Fi/RTOS/alloc/backtrace/println) plus the partition
-# reader. Pair with `server`, e.g. `--features esp32,server`.
+# Chip-target selectors — LIBRARY chip dependencies ONLY: esp-hal (for the non-invasive
+# GPIO/LEDC register reads in `reader.rs` + the efuse/clock reads in `hwinfo.rs`) and the
+# partition-table reader. Pair with `server`, e.g. `--features esp32s3,server`. A consuming
+# firmware enables exactly these — it supplies its own Wi-Fi/RTOS/alloc/panic/logging runtime,
+# so the example-runtime crates are deliberately NOT pulled here (they would collide with the
+# host's esp-println output mode and esp-backtrace panic handler, and bloat its DRAM).
 esp32 = [
   "dep:esp-hal",
   "esp-hal/esp32",
@@ -96,6 +96,23 @@ esp32 = [
   "dep:esp-bootloader-esp-idf",
   "esp-bootloader-esp-idf/esp32",
   "dep:embedded-storage",
+]
+esp32s3 = [
+  "dep:esp-hal",
+  "esp-hal/esp32s3",
+  "esp-hal/unstable",
+  "dep:esp-bootloader-esp-idf",
+  "esp-bootloader-esp-idf/esp32s3",
+  "dep:embedded-storage",
+]
+
+# Example-runtime crates the *runnable examples* need but the library does not: the embassy
+# executor + `'static` allocation, plus Wi-Fi / RTOS / heap / panic-handler / logging. Kept
+# separate (one per chip) so a consuming firmware never drags them in. Pair with the matching
+# chip + `server`, e.g. `--features esp32s3,server,example-esp32s3`.
+example-esp32 = [
+  "dep:embassy-executor",
+  "dep:static_cell",
   "dep:esp-radio",
   "esp-radio/esp32",
   "esp-radio/wifi",
@@ -115,13 +132,9 @@ esp32 = [
   "esp-println/esp32",
   "esp-println/uart",
 ]
-esp32s3 = [
-  "dep:esp-hal",
-  "esp-hal/esp32s3",
-  "esp-hal/unstable",
-  "dep:esp-bootloader-esp-idf",
-  "esp-bootloader-esp-idf/esp32s3",
-  "dep:embedded-storage",
+example-esp32s3 = [
+  "dep:embassy-executor",
+  "dep:static_cell",
   "dep:esp-radio",
   "esp-radio/esp32s3",
   "esp-radio/wifi",
@@ -139,21 +152,23 @@ esp32s3 = [
   "esp-backtrace/println",
   "dep:esp-println",
   "esp-println/esp32s3",
-  "esp-println/uart",
+  # `auto` picks the best console for the board: USB-Serial-JTAG on native-USB S3 dev boards
+  # (so println shows over the USB-C port), or UART on boards with a separate serial bridge.
+  "esp-println/auto",
 ]
 
 # --- Per-chip runnable example firmware --------------------------------------------
 # Built with an explicit `--target` + `--example`, e.g.:
-#   cargo +esp build --release -Zbuild-std=core,alloc --target xtensa-esp32-none-elf   --example esp32   --features esp32,server
-#   cargo +esp build --release -Zbuild-std=core,alloc --target xtensa-esp32s3-none-elf --example esp32s3 --features esp32s3,server
+#   cargo +esp build --release -Zbuild-std=core,alloc --target xtensa-esp32-none-elf   --example esp32   --features esp32,server,example-esp32
+#   cargo +esp build --release -Zbuild-std=core,alloc --target xtensa-esp32s3-none-elf --example esp32s3 --features esp32s3,server,example-esp32s3
 # `required-features` keeps them out of host `cargo test` (which sets no features).
 [[example]]
 name = "esp32"
-required-features = ["esp32", "server"]
+required-features = ["esp32", "server", "example-esp32"]
 
 [[example]]
 name = "esp32s3"
-required-features = ["esp32s3", "server"]
+required-features = ["esp32s3", "server", "example-esp32s3"]
 
 # --- Build profiles ----------------------------------------------------------------
 # The Xtensa examples must be built with optimizations even in dev: `opt-level = 0` inflates
