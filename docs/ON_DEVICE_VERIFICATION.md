@@ -171,6 +171,37 @@ release build):
 > raised the main stack 24 KB → 88 KB. Architect-reviewed (APPROVED) + graceful
 > drain-on-close hardening (M1) applied.
 
+## Verified results (native-USB ESP32-S3 rev v0.2, 2026-07-11)
+
+Confirmed on device `192.168.50.126:8080` (release build), **both branches flashed and
+tested on the same board** — REST 7/7 `200`, live SSE, correct `ESP32-S3`/rev-2 `/espinfo`.
+
+| | `master` (esp-hal **1.1**) | `esp-hal-1.0` branch |
+|---|---|---|
+| REST 7/7 + SSE | ✅ | ✅ |
+| Wire protocol bytes | identical | identical |
+| `/pinmodes` | pins 2,0,4,1 | pins 2,0,4,1 (same) |
+| SSE `gpio-state` baseline | identical `s/v/t` | identical |
+| SSE `free_heap` | 49.68 KB | 49.82 KB (~noise) |
+| App image size | 483,632 B | 450,256 B |
+
+**Conclusion:** the two dependency stacks are **functionally interchangeable** on hardware —
+the pure modules (protocol/reader/sampler/server) are version-agnostic, as intended. The 1.0
+branch's smaller image + `FRAME_QUEUE_DEPTH=2` is the better fit for the near-full-RAM
+esp-hal-1.0 PSRAM-XIP fork; `master`/1.1 is the primary line.
+
+### Native-USB S3 flashing notes
+- **Console is USB-Serial-JTAG**, not UART pins — the S3 example uses `esp-println/auto` so
+  `println!` shows over the USB-C port. (`esp-println/uart` on the classic ESP32.)
+- espflash **won't auto-connect** a running native-USB S3: enter **download mode** (hold BOOT,
+  tap RST, release BOOT) to flash. The `usbmodem` port re-enumerates between run
+  (`usbmodem1234561`) and download (`usbmodem101`) — pass the current one to `--port`.
+- Software resets (`espflash reset`, DTR/RTS) tended to re-enter download mode on this board;
+  a **physical RST tap (BOOT released)** reliably boots the app.
+- Opening the JTAG port does **not** reset the S3, so the one-time boot log is easily missed —
+  find the device on the LAN by MAC instead: `arp -a | grep -i <mac>` after a ping-sweep. (ICMP
+  may be dropped even when TCP :8080 serves fine.)
+
 ## 4. Report back — results checklist
 
 Copy this, fill in, and send to Claude:
