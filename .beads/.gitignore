@@ -70,3 +70,7 @@ bd.db
 # They would override fork protection in .git/info/exclude.
 # Config files (metadata.json, config.yaml) are tracked by git by default
 # since no pattern above ignores them.
+
+# Dolt backup state (runtime, per-machine; created by bd backup init)
+dolt-backup.json
+dolt-backup-state.json
