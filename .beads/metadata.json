@@ -1,7 +1,9 @@
 {
   "database": "dolt",
   "backend": "dolt",
-  "dolt_mode": "embedded",
+  "dolt_mode": "server",
+  "dolt_server_host": "127.0.0.1",
+  "dolt_server_port": 52010,
   "dolt_database": "esp_gpio_viewer",
   "project_id": "e9e4217b-1a48-400e-ac2e-2de226831452"
 }
